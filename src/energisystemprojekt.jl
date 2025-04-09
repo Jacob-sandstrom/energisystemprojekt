@@ -4,6 +4,7 @@
 
 module energisystemprojekt
 
+
 using JuMP, AxisArrays, Gurobi, UnPack
 
 export runmodel
@@ -14,7 +15,7 @@ function buildmodel(input)
 
     println("\nBuilding model...")
  
-    @unpack REGION, PLANT, HOUR, numregions, load, maxcap = input
+    @unpack REGION, PLANT, HOUR, numregions, load, maxcap, ic, rc, fc, lt, ac, wind_cf, pv_cf, inflow = input
 
     m = Model(Gurobi.Optimizer)
 
@@ -22,6 +23,11 @@ function buildmodel(input)
 
         Electricity[r in REGION, p in PLANT, h in HOUR]       >= 0        # MWh/h
         Capacity[r in REGION, p in PLANT]                     >= 0        # MW
+
+        Systemcost[r in REGION]                               >= 0
+        ReservoirLevel[h in HOUR]                             >= 0         #MW
+
+        Co2[r in REGION]                                      >= 0
 
     end #variables
 
@@ -33,11 +39,34 @@ function buildmodel(input)
 
 
     @constraints m begin
-        Generation[r in REGION, p in PLANT, h in HOUR],
+        GenerationGH[r in REGION, p in [:Gas, :Hydro], h in HOUR],
             Electricity[r, p, h] <= Capacity[r, p] # * capacity factor
 
+        GenerationW[r in REGION, h in HOUR],
+            Electricity[r, :Wind, h] <= Capacity[r, :Wind] * wind_cf[r, h]
+
+        GenerationP[r in REGION, h in HOUR],
+            Electricity[r, :PV, h] <= Capacity[r, :PV] * pv_cf[r, h]
+
+        Load[r in REGION, h in HOUR],
+            sum(Electricity[r, p, h] for p in PLANT) >= load[r,h]
+
+
+        rescap[h in HOUR],
+            ReservoirLevel[h] <= 33000000
+
+        ReservoirLevel[1] == ReservoirLevel[length(HOUR)]
+
+        resChange[h in 1:length(HOUR)-1],
+            ReservoirLevel[h+1] == ReservoirLevel[h] + inflow[h]- Electricity[:SE, :Hydro, h]
+        
+
+        CO2[r in REGION, h in HOUR],
+            Co2[r] >= sum(Electricity[r, :Gas, h]/0.4*0.202)
+        
         SystemCost[r in REGION],
-            Systemcost[r] >= 0 # sum of all annualized costs
+            Systemcost[r] >= sum(ac[p]*Capacity[r, p] for p in PLANT) +
+                sum(rc[p]*Electricity[r, p, h] for p in PLANT, h in HOUR) # sum of all annualized costs
     
     end #constraints
 
@@ -46,7 +75,7 @@ function buildmodel(input)
         sum(Systemcost[r] for r in REGION)
     end # objective
 
-    return (;m, Capacity)
+    return (;m, Capacity, Co2, ReservoirLevel)
 
 end # buildmodel
 
@@ -56,7 +85,7 @@ function runmodel()
 
     model = buildmodel(input)
 
-    @unpack m, Capacity = model   
+    @unpack m, Capacity, Co2, ReservoirLevel = model   
     
     println("\nSolving model...")
     
@@ -74,9 +103,12 @@ function runmodel()
     Cost_result = objective_value(m)/1000000 # M€
     Capacity_result = value.(Capacity)
 
-
-    println("Cost (M€): ", Cost_result)
+    println("\ncapacity: ", Capacity_result)
+    println("\nReservoir level: ",value.(ReservoirLevel)[8760])
+    println("\no2: ", value.(Co2))
+    println("\nCost (M€): ", Cost_result)
    
+
     nothing
 
 end #runmodel
