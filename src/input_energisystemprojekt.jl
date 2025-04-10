@@ -9,7 +9,7 @@ function read_input()
 
     #Sets
     REGION = [:DE, :SE, :DK]
-    PLANT = [:Wind,  :PV, :Gas, :Hydro] # Add all plants
+    PLANT = [:Wind,  :PV, :Gas, :Hydro, :Battery, :Transmission] # Add all plants
     HOUR = 1:8760
 
     #Parameters
@@ -22,7 +22,7 @@ function read_input()
     load = AxisArray(zeros(numregions, numhours), REGION, HOUR)
 
     inflow=timeseries[:, "Hydro_inflow"]                                                       
-    
+
     for r in REGION
         wind_cf[r, :]=timeseries[:, "Wind_"*"$r"]                                                        # 0-1, share of installed cap
         pv_cf[r, :]=timeseries[:, "PV_"*"$r"]                                                           
@@ -31,11 +31,14 @@ function read_input()
 
     myinf = 1e8
     maxcaptable = [                                                             # GW
-        # PLANT      DE             SE              DK       
-        :Wind        180            280             90       
-        :PV          460            75              60      
-        :Gas         myinf          myinf           myinf         
-        :Hydro       0              14              0       
+        # PLANT         DE             SE              DK       
+        :Wind           180            280             90       
+        :PV             460            75              60      
+        :Gas            myinf          myinf           myinf         
+        :Hydro          0              14              0       
+        :Battery        myinf          myinf           myinf 
+        :Transmission   myinf          myinf           myinf 
+        # :Nuclear        myinf          myinf           myinf 
     ]
 
     maxcap = AxisArray(maxcaptable[:,2:end]'.*1000, REGION, PLANT) # MW
@@ -45,18 +48,24 @@ function read_input()
 
     ic = Dict(
         # PLANT     #Cost euro/MW
-        :Wind   =>  1100000,
-        :PV     =>  600000,
-        :Gas    =>  550000,
-        :Hydro  =>  0
+        :Wind           =>  1100000,
+        :PV             =>  600000,
+        :Gas            =>  550000,
+        :Hydro          =>  0,
+        :Battery        =>  150000,
+        :Transmission   =>  2500000,
+        :Nuclear        =>  7700000
     )
 
     rc = Dict(
         # PLANT     #Cost euro/MWh_elec
-        :Wind   =>  0.1,
-        :PV     =>  0.1,
-        :Gas    =>  2 + 22/0.4,
-        :Hydro  =>  0.1
+        :Wind           =>  0.1,
+        :PV             =>  0.1,
+        :Gas            =>  2 + 22/0.4,
+        :Hydro          =>  0.1,
+        :Battery        =>  0.1,
+        :Transmission   =>  0,
+        :Nuclear        =>  4 + 3.2/0.4
     )
 
     fc = [
@@ -69,10 +78,13 @@ function read_input()
 
     lt = Dict(
         # PLANT     #lifetime years
-        :Wind   =>  25,
-        :PV     =>  25,
-        :Gas    =>  30,
-        :Hydro  =>  80
+        :Wind           =>  25,
+        :PV             =>  25,
+        :Gas            =>  30,
+        :Hydro          =>  80,
+        :Battery        =>  10,
+        :Transmission   =>  50,
+        :Nuclear        =>  50
     )
 
         
@@ -82,7 +94,10 @@ function read_input()
         :Wind   =>  ic[:Wind]*discountrate/(1-1/(1+discountrate)^lt[:Wind]),
         :PV     =>  ic[:PV]*discountrate/(1-1/(1+discountrate)^lt[:PV]),
         :Gas    =>  ic[:Gas]*discountrate/(1-1/(1+discountrate)^lt[:Gas]),
-        :Hydro  =>  ic[:Hydro]*discountrate/(1-1/(1+discountrate)^lt[:Hydro])
+        :Hydro  =>  ic[:Hydro]*discountrate/(1-1/(1+discountrate)^lt[:Hydro]),
+        :Battery  =>  ic[:Battery]*discountrate/(1-1/(1+discountrate)^lt[:Battery]),
+        :Transmission  =>  ic[:Transmission]*discountrate/(1-1/(1+discountrate)^lt[:Transmission]),
+        :Nuclear  =>  ic[:Nuclear]*discountrate/(1-1/(1+discountrate)^lt[:Nuclear])
     )
 
 

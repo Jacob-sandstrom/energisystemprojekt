@@ -21,13 +21,21 @@ function buildmodel(input)
 
     @variables m begin
 
-        Electricity[r in REGION, p in PLANT, h in HOUR]       >= 0        # MWh/h
-        Capacity[r in REGION, p in PLANT]                     >= 0        # MW
+        Electricity[r in REGION, p in PLANT, h in HOUR]         >= 0        # MWh/h
+        Capacity[r in REGION, p in PLANT]                       >= 0        # MW
 
-        Systemcost[r in REGION]                               >= 0
-        ReservoirLevel[h in HOUR]                             >= 0         #MW
+        Systemcost[r in REGION]                                 >= 0
+        ReservoirLevel[h in HOUR]                               >= 0         #MW
+        
+        Co2[r in REGION]                                        >= 0
+        
+        # Excercise 2
+        # b
+        BatteryCharge[r in REGION, h in HOUR]                   >= 0
 
-        Co2[r in REGION]                                      >= 0
+        # Excercise 3
+        Transmission[r1 in REGION, r2 in REGION, h in HOUR]     >= 0          # first region is sender second is reciever
+        TransmissionCap[r1 in REGION, r2 in REGION]             >= 0          # first region is sender second is reciever
 
     end #variables
 
@@ -61,21 +69,64 @@ function buildmodel(input)
             ReservoirLevel[h+1] == ReservoirLevel[h] + inflow[h]- Electricity[:SE, :Hydro, h]
         
 
-        CO2[r in REGION, h in HOUR],
-            Co2[r] >= sum(Electricity[r, :Gas, h]/0.4*0.202)
+        CO2[r in REGION],
+            Co2[r] == sum(Electricity[r, :Gas, h]/0.4*0.202 for h in HOUR)
+
         
         SystemCost[r in REGION],
             Systemcost[r] >= sum(ac[p]*Capacity[r, p] for p in PLANT) +
                 sum(rc[p]*Electricity[r, p, h] for p in PLANT, h in HOUR) # sum of all annualized costs
     
+
+        # Excercise 2
+        # a
+
+        # Model cant be solved with this req
+        # sum(Co2[r] for r in REGION) <= 0.1* 1.387744849926479e8
+
+        # b
+        BatteryCap[r in REGION, h in HOUR],
+            BatteryCharge[r, h] <= Capacity[r, :Battery]
+
+        GenerationB[r in REGION, h in HOUR],
+            Electricity[r, :Battery, h] <= BatteryCharge[r, h]
+
+        Charge[r in REGION, h in 1:length(HOUR)-1],
+            BatteryCharge[r, h+1] == BatteryCharge[r, h] - Electricity[r, :Battery, h] + 
+                0.9 * (sum(Electricity[r, p, h] for p in PLANT[PLANT .!= :Battery]) - load[r,h])  
+
+
+
+        # Excercise 3
+        MirrorTransmissionCap[r1 in REGION, r2 in REGION],
+            TransmissionCap[r1, r2] == TransmissionCap[r2, r1]
+
+        TransCap[r1 in REGION, r2 in REGION, h in HOUR],
+            Transmission[r1, r2, h] <= TransmissionCap[r1, r2]
+
+        Transmit[r1 in REGION, h in HOUR],
+            sum(Transmission[r1, r2, h] for r2 in REGION) == 
+                0.98 * (sum(Electricity[r1, p, h] for p in PLANT) - load[r1,h])  
+
+        GenerationT[r2 in REGION, h in HOUR],
+            Electricity[r2, :Transmission, h] == sum(Transmission[r1, r2, h] for r1 in REGION)
+
+            
+        # NoSelfTransmission[r in REGION],
+        #     TransmissionCap[r, r] == 0
+
+
     end #constraints
 
+    # print("\n\n\n\n")
+    # println(Electricity[:SE, :Transmission, 1])
+    # print("\n\n\n\n")
 
     @objective m Min begin
         sum(Systemcost[r] for r in REGION)
     end # objective
 
-    return (;m, Capacity, Co2, ReservoirLevel)
+    return (;m, Capacity, Co2, ReservoirLevel, TransmissionCap)
 
 end # buildmodel
 
@@ -85,7 +136,7 @@ function runmodel()
 
     model = buildmodel(input)
 
-    @unpack m, Capacity, Co2, ReservoirLevel = model   
+    @unpack m, Capacity, Co2, ReservoirLevel, TransmissionCap = model   
     
     println("\nSolving model...")
     
@@ -105,7 +156,8 @@ function runmodel()
 
     println("\ncapacity: ", Capacity_result)
     println("\nReservoir level: ",value.(ReservoirLevel)[8760])
-    println("\no2: ", value.(Co2))
+    println("\nCo2: ", sum(value.(Co2)))
+    println("\nTransmissionCap: ", value.(TransmissionCap))
     println("\nCost (M€): ", Cost_result)
    
 
