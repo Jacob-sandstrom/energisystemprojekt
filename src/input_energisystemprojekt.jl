@@ -9,7 +9,10 @@ function read_input()
 
     #Sets
     REGION = [:DE, :SE, :DK]
-    PLANT = [:Wind,  :PV, :Gas, :Hydro, :Battery, :Transmission] # Add all plants
+    # PLANT = [:Wind,  :PV, :Gas, :Hydro] # Add all plants
+    # PLANT = [:Wind,  :PV, :Gas, :Hydro, :Battery] # Add all plants
+    # PLANT = [:Wind,  :PV, :Gas, :Hydro, :Battery, :Transmission] # Add all plants
+    PLANT = [:Wind,  :PV, :Gas, :Hydro, :Battery, :Transmission, :Nuclear] # Add all plants
     HOUR = 1:8760
 
     #Parameters
@@ -21,13 +24,24 @@ function read_input()
     pv_cf = AxisArray(ones(numregions, numhours), REGION, HOUR)
     load = AxisArray(zeros(numregions, numhours), REGION, HOUR)
 
+    wind_avg = AxisArray(ones(numregions), REGION)
+    pv_avg = AxisArray(ones(numregions), REGION)
+    load_max = AxisArray(zeros(numregions), REGION)
+
     inflow=timeseries[:, "Hydro_inflow"]                                                       
 
     for r in REGION
         wind_cf[r, :]=timeseries[:, "Wind_"*"$r"]                                                        # 0-1, share of installed cap
         pv_cf[r, :]=timeseries[:, "PV_"*"$r"]                                                           
         load[r, :]=timeseries[:, "Load_"*"$r"]    
+        wind_avg[r]=sum(timeseries[:, "Wind_"*"$r"])/length(HOUR)                                                        # 0-1, share of installed cap
+        pv_avg[r]=sum(timeseries[:, "PV_"*"$r"])/length(HOUR)                                                           
+        load_max[r]=maximum(timeseries[:, "Load_"*"$r"])    
     end
+
+    print(wind_avg)
+    print(pv_avg)
+    print(load_max)
 
     myinf = 1e8
     maxcaptable = [                                                             # GW
@@ -38,7 +52,7 @@ function read_input()
         :Hydro          0              14              0       
         :Battery        myinf          myinf           myinf 
         :Transmission   myinf          myinf           myinf 
-        # :Nuclear        myinf          myinf           myinf 
+        :Nuclear        myinf          myinf           myinf 
     ]
 
     maxcap = AxisArray(maxcaptable[:,2:end]'.*1000, REGION, PLANT) # MW
